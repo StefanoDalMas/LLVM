@@ -1,7 +1,93 @@
-// Base AST Class
-#include "../lexer/lexer.h"
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
+
+// The lexer returns tokens [0-255] if it is an unknown character, otherwise one
+// of these for known things.
+enum Token
+{
+    tok_eof = -1,
+
+    // commands
+    tok_def = -2,
+    tok_extern = -3,
+
+    // primary
+    tok_identifier = -4,
+    tok_number = -5
+};
+
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
+
+/// gettok - Return the next token from standard input.
+static int gettok()
+{
+    static int LastChar = ' ';
+
+    // Skip any whitespace.
+    while (isspace(LastChar))
+        LastChar = getchar();
+
+    if (isalpha(LastChar))
+    { // identifier: [a-zA-Z][a-zA-Z0-9]*
+        IdentifierStr = LastChar;
+        while (isalnum((LastChar = getchar())))
+            IdentifierStr += LastChar;
+
+        if (IdentifierStr == "def")
+            return tok_def;
+        if (IdentifierStr == "extern")
+            return tok_extern;
+        return tok_identifier;
+    }
+
+    if (isdigit(LastChar) || LastChar == '.')
+    { // Number: [0-9.]+
+        std::string NumStr;
+        do
+        {
+            NumStr += LastChar;
+            LastChar = getchar();
+        } while (isdigit(LastChar) || LastChar == '.');
+
+        NumVal = strtod(NumStr.c_str(), nullptr);
+        return tok_number;
+    }
+
+    if (LastChar == '#')
+    {
+        // Comment until end of line.
+        do
+            LastChar = getchar();
+        while (LastChar != EOF && LastChar != '\n' && LastChar != '\r');
+
+        if (LastChar != EOF)
+            return gettok();
+    }
+
+    // Check for end of file.  Don't eat the EOF.
+    if (LastChar == EOF)
+        return tok_eof;
+
+    // Otherwise, just return the character as its ascii value.
+    int ThisChar = LastChar;
+    LastChar = getchar();
+    return ThisChar;
+}
+
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (aka Parse Tree)
+//===----------------------------------------------------------------------===//
 
 namespace
 {
@@ -84,12 +170,22 @@ namespace
 
 } // end anonymous namespace
 
+//===----------------------------------------------------------------------===//
+// Parser
+//===----------------------------------------------------------------------===//
+
+/// CurTok/getNextToken - Provide a simple token buffer.  CurTok is the current
+/// token the parser is looking at.  getNextToken reads another token from the
+/// lexer and updates CurTok with its results.
+static int CurTok;
+static int getNextToken() { return CurTok = gettok(); }
+
 /// BinopPrecedence - This holds the precedence for each binary operator that is
 /// defined.
-std::map<char, int> BinopPrecedence;
+static std::map<char, int> BinopPrecedence;
 
 /// GetTokPrecedence - Get the precedence of the pending binary operator token.
-int GetTokPrecedence()
+static int GetTokPrecedence()
 {
     if (!isascii(CurTok))
         return -1;
@@ -113,10 +209,10 @@ std::unique_ptr<PrototypeAST> LogErrorP(const char *Str)
     return nullptr;
 }
 
-std::unique_ptr<ExprAST> ParseExpression();
+static std::unique_ptr<ExprAST> ParseExpression();
 
 /// numberexpr ::= number
-std::unique_ptr<ExprAST> ParseNumberExpr()
+static std::unique_ptr<ExprAST> ParseNumberExpr()
 {
     auto Result = std::make_unique<NumberExprAST>(NumVal);
     getNextToken(); // consume the number
@@ -124,7 +220,7 @@ std::unique_ptr<ExprAST> ParseNumberExpr()
 }
 
 /// parenexpr ::= '(' expression ')'
-std::unique_ptr<ExprAST> ParseParenExpr()
+static std::unique_ptr<ExprAST> ParseParenExpr()
 {
     getNextToken(); // eat (.
     auto V = ParseExpression();
@@ -140,7 +236,7 @@ std::unique_ptr<ExprAST> ParseParenExpr()
 /// identifierexpr
 ///   ::= identifier
 ///   ::= identifier '(' expression* ')'
-std::unique_ptr<ExprAST> ParseIdentifierExpr()
+static std::unique_ptr<ExprAST> ParseIdentifierExpr()
 {
     std::string IdName = IdentifierStr;
 
@@ -180,7 +276,7 @@ std::unique_ptr<ExprAST> ParseIdentifierExpr()
 ///   ::= identifierexpr
 ///   ::= numberexpr
 ///   ::= parenexpr
-std::unique_ptr<ExprAST> ParsePrimary()
+static std::unique_ptr<ExprAST> ParsePrimary()
 {
     switch (CurTok)
     {
@@ -197,7 +293,7 @@ std::unique_ptr<ExprAST> ParsePrimary()
 
 /// binoprhs
 ///   ::= ('+' primary)*
-std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
+static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS)
 {
     // If this is a binop, find its precedence.
@@ -238,7 +334,7 @@ std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
 /// expression
 ///   ::= primary binoprhs
 ///
-std::unique_ptr<ExprAST> ParseExpression()
+static std::unique_ptr<ExprAST> ParseExpression()
 {
     auto LHS = ParsePrimary();
     if (!LHS)
@@ -249,7 +345,7 @@ std::unique_ptr<ExprAST> ParseExpression()
 
 /// prototype
 ///   ::= id '(' id* ')'
-std::unique_ptr<PrototypeAST> ParsePrototype()
+static std::unique_ptr<PrototypeAST> ParsePrototype()
 {
     if (CurTok != tok_identifier)
         return LogErrorP("Expected function name in prototype");
@@ -273,7 +369,7 @@ std::unique_ptr<PrototypeAST> ParsePrototype()
 }
 
 /// definition ::= 'def' prototype expression
-std::unique_ptr<FunctionAST> ParseDefinition()
+static std::unique_ptr<FunctionAST> ParseDefinition()
 {
     getNextToken(); // eat def.
     auto Proto = ParsePrototype();
@@ -286,7 +382,7 @@ std::unique_ptr<FunctionAST> ParseDefinition()
 }
 
 /// toplevelexpr ::= expression
-std::unique_ptr<FunctionAST> ParseTopLevelExpr()
+static std::unique_ptr<FunctionAST> ParseTopLevelExpr()
 {
     if (auto E = ParseExpression())
     {
@@ -299,7 +395,7 @@ std::unique_ptr<FunctionAST> ParseTopLevelExpr()
 }
 
 /// external ::= 'extern' prototype
-std::unique_ptr<PrototypeAST> ParseExtern()
+static std::unique_ptr<PrototypeAST> ParseExtern()
 {
     getNextToken(); // eat extern.
     return ParsePrototype();
@@ -309,7 +405,7 @@ std::unique_ptr<PrototypeAST> ParseExtern()
 // Top-Level parsing
 //===----------------------------------------------------------------------===//
 
-void HandleDefinition()
+static void HandleDefinition()
 {
     if (ParseDefinition())
     {
@@ -322,7 +418,7 @@ void HandleDefinition()
     }
 }
 
-void HandleExtern()
+static void HandleExtern()
 {
     if (ParseExtern())
     {
@@ -335,7 +431,7 @@ void HandleExtern()
     }
 }
 
-void HandleTopLevelExpression()
+static void HandleTopLevelExpression()
 {
     // Evaluate a top-level expression into an anonymous function.
     if (ParseTopLevelExpr())
@@ -350,7 +446,7 @@ void HandleTopLevelExpression()
 }
 
 /// top ::= definition | external | expression | ';'
-void MainLoop()
+static void MainLoop()
 {
     while (true)
     {

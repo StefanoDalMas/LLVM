@@ -1,57 +1,67 @@
 #include "lexer.h"
-#include <cctype>
 #include <iostream>
-#include <string>
 
-static int gettok() {
-    int resvalue;
-    static int LastChar = ' ';
-    while (isspace(LastChar)) {
+int CurTok;
+std::string IdentifierStr;
+double NumVal;
+
+/// gettok - Return the next token from standard input.
+int gettok()
+{
+    int LastChar = ' ';
+
+    // Skip any whitespace.
+    while (isspace(LastChar))
         LastChar = getchar();
-    }
-    // check if is A-Z
-    if (isalpha(LastChar)) {
+
+    if (isalpha(LastChar))
+    { // identifier: [a-zA-Z][a-zA-Z0-9]*
         IdentifierStr = LastChar;
-        while (isalnum(LastChar = getchar())) {
+        while (isalnum((LastChar = getchar())))
             IdentifierStr += LastChar;
-        }
-        if (IdentifierStr == "def") {
-            resvalue = tok_def;
-        } else if (IdentifierStr == "extern") {
-            resvalue = tok_extern;
-        } else {
-            resvalue = tok_identifier;
-        }
+
+        if (IdentifierStr == "def")
+            return tok_def;
+        if (IdentifierStr == "extern")
+            return tok_extern;
+        return tok_identifier;
     }
-    // this thing only checks 1.23 and not 1.23.45.678 for example
-    else if (isdigit(LastChar) || LastChar == '.') {
+
+    if (isdigit(LastChar) || LastChar == '.')
+    { // Number: [0-9.]+
         std::string NumStr;
-        do {
+        do
+        {
             NumStr += LastChar;
             LastChar = getchar();
         } while (isdigit(LastChar) || LastChar == '.');
-        NumVal = strtod(NumStr.c_str(), 0);
-        resvalue = tok_number;
+
+        NumVal = strtod(NumStr.c_str(), nullptr);
+        return tok_number;
     }
-    // now for the comments
-    else if (LastChar == '#') {
-        do {
+
+    if (LastChar == '#')
+    {
+        // Comment until end of line.
+        do
             LastChar = getchar();
-        } while (LastChar != EOF && LastChar != '\n' && LastChar != '\r');
-        if (LastChar != EOF) {
+        while (LastChar != EOF && LastChar != '\n' && LastChar != '\r');
+
+        if (LastChar != EOF)
             return gettok();
-        }
     }
-    // now read EOF but don't eat it!
-    else if (LastChar == EOF) {
-        resvalue = tok_eof;
-    }
-    // it has to be an ASCII character like +,- and so on
-    else {
-        int ThisChar = LastChar;
-        LastChar = getchar();
-        resvalue = ThisChar;
-    }
-    return resvalue;
+
+    // Check for end of file.  Don't eat the EOF.
+    if (LastChar == EOF)
+        return tok_eof;
+
+    // Otherwise, just return the character as its ascii value.
+    int ThisChar = LastChar;
+    LastChar = getchar();
+    return ThisChar;
 }
-int main() { std::cout << gettok() << std::endl; }
+
+int getNextToken()
+{
+    return CurTok = gettok();
+}

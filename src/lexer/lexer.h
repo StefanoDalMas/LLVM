@@ -4,7 +4,8 @@
 #include <cctype>
 #include <string>
 
-enum Token {
+enum Token
+{
     tok_eof = -1,
     tok_def = -2,
     tok_extern = -3,
@@ -12,9 +13,11 @@ enum Token {
     tok_number = -5,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+extern int CurTok;
+extern std::string IdentifierStr;
+extern double NumVal;
 
-static int gettok();
+int gettok();
+int getNextToken();
 
-#endif  // TOKENIZER_H
+#endif // TOKENIZER_H
